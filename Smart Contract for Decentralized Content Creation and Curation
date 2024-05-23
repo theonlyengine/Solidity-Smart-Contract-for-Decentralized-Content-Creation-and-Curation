@@ -1,0 +1,92 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/utils/math/SafeMath.sol";
+
+contract ContentCreationAndCuration is Ownable {
+    using SafeMath for uint256;
+
+    IERC20 public maartionToken;
+
+    struct Course {
+        uint256 id;
+        string title;
+        string description;
+        address creator;
+        uint256 upvotes;
+        uint256 downvotes;
+        bool approved;
+    }
+
+    uint256 public nextCourseId = 1;
+    mapping(uint256 => Course) public courses;
+    mapping(address => mapping(uint256 => bool)) public votes;
+
+    event CourseCreated(uint256 courseId, string title, string description, address creator);
+    event CourseVoted(uint256 courseId, address voter, bool isUpvote);
+    event CourseApproved(uint256 courseId, bool approved);
+
+    constructor(address _maartionToken) {
+        maartionToken = IERC20(_maartionToken);
+    }
+
+    modifier onlyCourseCreator(uint256 _courseId) {
+        require(courses[_courseId].creator == msg.sender, "Only the course creator can perform this action");
+        _;
+    }
+
+    function createCourse(string memory _title, string memory _description) public {
+        uint256 courseId = nextCourseId;
+        courses[courseId] = Course({
+            id: courseId,
+            title: _title,
+            description: _description,
+            creator: msg.sender,
+            upvotes: 0,
+            downvotes: 0,
+            approved: false
+        });
+
+        emit CourseCreated(courseId, _title, _description, msg.sender);
+
+        nextCourseId++;
+    }
+
+    function voteCourse(uint256 _courseId, bool _isUpvote) public {
+        require(!votes[msg.sender][_courseId], "You have already voted for this course");
+
+        if (_isUpvote) {
+            courses[_courseId].upvotes = courses[_courseId].upvotes.add(1);
+        } else {
+            courses[_courseId].downvotes = courses[_courseId].downvotes.add(1);
+        }
+
+        votes[msg.sender][_courseId] = true;
+
+        emit CourseVoted(_courseId, msg.sender, _isUpvote);
+
+        // Automatically approve or reject the course based on votes
+        if (courses[_courseId].upvotes >= 10) {
+            courses[_courseId].approved = true;
+            emit CourseApproved(_courseId, true);
+        } else if (courses[_courseId].downvotes >= 10) {
+            courses[_courseId].approved = false;
+            emit CourseApproved(_courseId, false);
+        }
+    }
+
+    function getCourseDetails(uint256 _courseId) public view returns (string memory title, string memory description, address creator, uint256 upvotes, uint256 downvotes, bool approved) {
+        Course storage course = courses[_courseId];
+        return (course.title, course.description, course.creator, course.upvotes, course.downvotes, course.approved);
+    }
+
+    function updateCourse(uint256 _courseId, string memory _title, string memory _description) public onlyCourseCreator(_courseId) {
+        Course storage course = courses[_courseId];
+        course.title = _title;
+        course.description = _description;
+
+        emit CourseCreated(_courseId, _title, _description, msg.sender);
+    }
+}
